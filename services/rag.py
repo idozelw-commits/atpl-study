@@ -29,21 +29,17 @@ Reply with exactly 3 queries, one per line. No numbering, no explanations."""
 async def retrieve_chunks(question: str) -> list:
     """Hybrid retrieval: vector similarity + keyword search."""
 
-    queries = await expand_query(question)
-    queries.append(question)
-
     seen_ids = set()
     all_chunks = []
 
-    # Vector search for each query — more results per query
-    for query in queries:
-        results = search_chunks_by_embedding(query, top_k=8)
-        for chunk in results:
-            if chunk["id"] not in seen_ids and chunk.get("similarity", 0) > 0.3:
-                seen_ids.add(chunk["id"])
-                all_chunks.append(chunk)
+    # Vector search — single query, more results (faster than query expansion)
+    results = search_chunks_by_embedding(question, top_k=15)
+    for chunk in results:
+        if chunk["id"] not in seen_ids and chunk.get("similarity", 0) > 0.3:
+            seen_ids.add(chunk["id"])
+            all_chunks.append(chunk)
 
-    # Keyword search — more results
+    # Keyword search
     keyword_results = search_chunks_by_text(question, top_k=10)
     for chunk in keyword_results:
         if chunk["id"] not in seen_ids:
