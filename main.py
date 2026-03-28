@@ -9,7 +9,10 @@ load_dotenv()
 
 app = FastAPI(title="ATPL Study Assistant")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+from jinja2 import Environment, FileSystemLoader
+_env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
 templates = Jinja2Templates(directory="templates")
+templates.env = _env
 
 # Initialize database on startup
 try:
