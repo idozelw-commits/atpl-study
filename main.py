@@ -43,7 +43,10 @@ app.include_router(qa.router)
 
 @app.get("/")
 async def home(request: Request):
-    return templates.TemplateResponse("home.html", {"request": request})
+    try:
+        return templates.TemplateResponse("home.html", {"request": request})
+    except Exception as e:
+        return JSONResponse({"error": str(e), "type": type(e).__name__}, status_code=500)
 
 
 @app.get("/health")
