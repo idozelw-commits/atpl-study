@@ -1,0 +1,14 @@
+/* HTMX loading indicator */
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+    display: flex;
+}
+
+/* Smooth transitions for HTMX swaps */
+.htmx-swapping {
+    opacity: 0;
+    transition: opacity 200ms ease-out;
+}

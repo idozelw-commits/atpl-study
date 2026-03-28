@@ -1,0 +1,39 @@
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import Response
+from starlette.middleware.base import BaseHTTPMiddleware
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = FastAPI(title="ATPL Study Assistant")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+
+# Disable browser caching for HTML pages
+class NoCacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if "text/html" in response.headers.get("content-type", ""):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
+app.add_middleware(NoCacheMiddleware)
+
+
+# Initialize database on startup
+from db.connection import init_db
+init_db()
+
+from routers import upload, qa
+
+app.include_router(upload.router)
+app.include_router(qa.router)
+
+
+@app.get("/")
+async def home(request: Request):
+    return templates.TemplateResponse("home.html", {"request": request})

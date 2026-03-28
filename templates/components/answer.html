@@ -1,0 +1,42 @@
+<div class="bg-white rounded-2xl border-2 border-elal-100 p-6 space-y-5 shadow-sm">
+    <!-- Confidence badge -->
+    <div class="flex items-center gap-2">
+        <span class="text-sm font-bold px-3 py-1.5 rounded-full
+            {% if confidence == 'high' %}bg-green-100 text-green-800 border border-green-300
+            {% elif confidence == 'medium' %}bg-yellow-50 text-yellow-800 border border-yellow-300
+            {% else %}bg-red-50 text-red-800 border border-red-300{% endif %}
+        ">
+            {% if confidence == 'high' %}High Confidence
+            {% elif confidence == 'medium' %}Medium Confidence
+            {% else %}Low Confidence{% endif %}
+        </span>
+    </div>
+
+    <!-- Answer text -->
+    <div class="prose prose-lg max-w-none text-elal-900 leading-relaxed" style="font-size: 1.125rem; line-height: 1.8;">
+        {{ answer_html | safe }}
+    </div>
+
+    <!-- Sources -->
+    {% if sources %}
+    <div class="pt-4 border-t-2 border-elal-50">
+        <button
+            onclick="this.nextElementSibling.classList.toggle('hidden')"
+            class="text-base font-bold text-elal-600 active:text-elal-800 min-h-[48px] flex items-center gap-2"
+        >
+            <span>Sources ({{ sources | length }})</span>
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div class="hidden mt-3 space-y-2">
+            {% for src in sources %}
+            <div class="text-base text-elal-700 bg-elal-50 rounded-xl px-4 py-3 border border-elal-100">
+                <span class="font-semibold">{{ src.document }}</span>
+                {% if src.chapter %} &rsaquo; {{ src.chapter }}{% endif %}
+                {% if src.section %} &rsaquo; {{ src.section }}{% endif %}
+                <span class="text-elal-400 ml-1">pages {{ src.page_start }}-{{ src.page_end }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}ATPL Study — Files{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="text-2xl font-bold text-elal-800">Study Material</h1>
+        <p class="text-elal-400 mt-1">Upload PDF files. They'll be processed and available for Q&A.</p>
+    </div>
+
+    <!-- Upload -->
+    <div class="bg-white rounded-2xl border-2 border-elal-100 p-5 space-y-4 shadow-sm">
+        <div>
+            <label class="block text-base font-semibold text-elal-700 mb-2">Choose PDF files (up to 5)</label>
+            <input type="file" id="files" accept=".pdf" multiple
+                class="w-full text-base file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:font-bold file:bg-elal-50 file:text-elal-700 file:min-h-[52px]">
+            <p id="file-info" class="text-base text-elal-400 mt-2"></p>
+        </div>
+
+        <button type="button" id="upload-btn" onclick="doUpload()"
+            class="w-full bg-elal-700 text-white font-bold py-4 px-6 rounded-2xl active:bg-elal-800 min-h-[56px] text-lg shadow-sm">
+            Upload & Process
+        </button>
+
+        <div id="transfer-progress" class="hidden">
+            <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <p class="font-semibold text-elal-700">Uploading...</p>
+                    <span id="transfer-pct" class="text-base font-bold text-elal-600">0%</span>
+                </div>
+                <div class="w-full bg-elal-100 rounded-full h-3">
+                    <div id="transfer-bar" class="bg-elal-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="processing-status"></div>
+
+    <!-- Documents list -->
+    <div>
+        <h2 class="text-base font-bold text-elal-400 uppercase tracking-wide mb-3">Your Documents</h2>
+        <div id="documents-list">
+            {% include "components/documents_list.html" %}
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('files').addEventListener('change', function() {
+    var n = this.files.length;
+    var info = document.getElementById('file-info');
+    if (n > 5) { info.textContent = 'Maximum 5 files.'; info.style.color = '#dc2626'; }
+    else if (n > 0) {
+        var mb = 0; for (var i = 0; i < n; i++) mb += this.files[i].size;
+        info.textContent = n + ' file' + (n > 1 ? 's' : '') + ' (' + (mb/1024/1024).toFixed(1) + ' MB)';
+        info.style.color = '#003366';
+    } else { info.textContent = ''; }
+});
+
+function doUpload() {
+    var filesInput = document.getElementById('files');
+    var btn = document.getElementById('upload-btn');
+    var transferDiv = document.getElementById('transfer-progress');
+    var transferBar = document.getElementById('transfer-bar');
+    var transferPct = document.getElementById('transfer-pct');
+    var statusDiv = document.getElementById('processing-status');
+    if (!filesInput.files || !filesInput.files.length || filesInput.files.length > 5) return;
+
+    var fd = new FormData();
+    for (var i = 0; i < Math.min(filesInput.files.length, 5); i++) fd.append('files', filesInput.files[i]);
+
+    btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = 'Uploading...';
+    transferDiv.classList.remove('hidden');
+
+    var xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) { var p = Math.round(e.loaded/e.total*100); transferBar.style.width = p+'%'; transferPct.textContent = p+'%'; }
+    };
+    xhr.onload = function() {
+        transferDiv.classList.add('hidden'); btn.disabled = false; btn.style.opacity = '1'; btn.textContent = 'Upload & Process';
+        if (xhr.status === 200) {
+            var data = JSON.parse(xhr.responseText);
+            var html = '<div class="space-y-3">';
+            for (var i = 0; i < data.uploads.length; i++) {
+                var u = data.uploads[i];
+                html += '<div id="proc-'+u.id+'" class="bg-white rounded-2xl border-2 border-elal-100 p-5 shadow-sm"><div class="flex items-center justify-between mb-3"><p class="font-bold text-elal-800 text-lg truncate">'+u.filename+'</p><span class="text-base font-bold text-elal-600 shrink-0 ml-2 proc-label">Processing...</span></div><div class="w-full bg-elal-100 rounded-full h-3"><div class="bg-elal-600 h-3 rounded-full transition-all duration-500 proc-bar" style="width: 5%"></div></div><p class="text-base text-elal-400 mt-2">'+u.page_count+' pages</p></div>';
+            }
+            html += '</div>';
+            statusDiv.innerHTML = html;
+            for (var i = 0; i < data.uploads.length; i++) pollProcessing(data.uploads[i].id);
+            filesInput.value = ''; document.getElementById('file-info').textContent = ''; refreshDocs();
+        } else { statusDiv.innerHTML = '<div class="bg-red-50 rounded-2xl border-2 border-red-200 p-5 text-red-700 text-lg font-medium">Upload failed. Please try again.</div>'; }
+    };
+    xhr.onerror = function() { transferDiv.classList.add('hidden'); btn.disabled = false; btn.style.opacity = '1'; btn.textContent = 'Upload & Process'; };
+    xhr.open('POST', '/upload/pdf'); xhr.send(fd);
+}
+
+function pollProcessing(docId) {
+    var el = document.getElementById('proc-' + docId); if (!el) return;
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function() {
+        if (xhr.status !== 200) { setTimeout(function(){pollProcessing(docId)}, 3000); return; }
+        var doc = JSON.parse(xhr.responseText);
+        var label = el.querySelector('.proc-label'), bar = el.querySelector('.proc-bar');
+        if (doc.status === 'done') { label.textContent = 'Ready!'; label.style.color = '#16a34a'; bar.style.width = '100%'; bar.style.backgroundColor = '#22c55e'; refreshDocs(); }
+        else if (doc.status === 'error') { label.textContent = 'Error'; label.style.color = '#dc2626'; }
+        else { var p = Math.round((doc.progress||0)*100); label.textContent = p+'%'; bar.style.width = Math.max(p,5)+'%'; setTimeout(function(){pollProcessing(docId)}, 3000); }
+    };
+    xhr.onerror = function() { setTimeout(function(){pollProcessing(docId)}, 5000); };
+    xhr.open('GET', '/upload/status/' + docId); xhr.send();
+}
+
+function refreshDocs() {
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function() { if (xhr.status === 200) document.getElementById('documents-list').innerHTML = xhr.responseText; };
+    xhr.open('GET', '/upload/documents'); xhr.send();
+}
+
+function deleteDoc(docId, filename) {
+    if (!confirm('Remove "' + filename + '" and all its indexed content?')) return;
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function() { refreshDocs(); };
+    xhr.open('DELETE', '/upload/document/' + docId); xhr.send();
+}
+
+function toggleEdit(docId) {
+    document.getElementById('edit-' + docId).classList.toggle('hidden');
+}
+
+function saveMeta(docId) {
+    var labels = document.getElementById('labels-' + docId).value;
+    var notes = document.getElementById('notes-' + docId).value;
+    var fd = new FormData(); fd.append('labels', labels); fd.append('notes', notes);
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function() { if (xhr.status === 200) { toggleEdit(docId); refreshDocs(); } };
+    xhr.open('POST', '/upload/document/' + docId + '/meta'); xhr.send(fd);
+}
+
+setInterval(refreshDocs, 5000);
+</script>
+{% endblock %}

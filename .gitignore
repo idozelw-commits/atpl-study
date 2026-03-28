@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+# Data is persistent — never delete
+# data/atpl.db, data/chroma/, data/uploads/ are the source of truth
+data/uploads/*.pdf
+data/atpl.db*
+data/chroma/

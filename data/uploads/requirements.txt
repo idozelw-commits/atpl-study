@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+pymupdf
+pdfplumber
+python-dotenv
+markdown
+chromadb
+sentence-transformers
+groq
+aiosqlite

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}ATPL Study — Ask a Question{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Question input -->
+    <div class="space-y-4">
+        <label for="question" class="block text-xl font-bold text-elal-800">Ask anything about your study material</label>
+        <textarea
+            id="question"
+            rows="4"
+            class="w-full rounded-2xl border-2 border-elal-200 px-5 py-4 text-lg focus:outline-none focus:ring-3 focus:ring-elal-400 focus:border-elal-400 resize-none bg-white text-elal-900 placeholder-elal-300"
+            placeholder="Type your question here..."
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askQuestion()}"
+        ></textarea>
+        <button
+            type="button"
+            id="ask-btn"
+            onclick="askQuestion()"
+            class="w-full bg-elal-700 text-white font-bold py-4 px-6 rounded-2xl active:bg-elal-800 min-h-[56px] text-lg shadow-sm"
+        >
+            Get Answer
+        </button>
+    </div>
+
+    <!-- Loading indicator -->
+    <div id="loading" class="hidden flex items-center justify-center py-10">
+        <div class="flex items-center gap-4 text-elal-600">
+            <svg class="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span class="text-lg">Searching your study material...</span>
+        </div>
+    </div>
+
+    <!-- Answer area -->
+    <div id="answer-area"></div>
+</div>
+
+<script>
+function askQuestion() {
+    var input = document.getElementById('question');
+    var question = input.value.trim();
+    if (!question) return;
+
+    var btn = document.getElementById('ask-btn');
+    var loading = document.getElementById('loading');
+    var answerArea = document.getElementById('answer-area');
+
+    btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = 'Searching...';
+    loading.classList.remove('hidden');
+    answerArea.innerHTML = '';
+
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function() {
+        loading.classList.add('hidden');
+        btn.disabled = false; btn.style.opacity = '1'; btn.textContent = 'Get Answer';
+        if (xhr.status === 200) { answerArea.innerHTML = xhr.responseText; }
+        else { answerArea.innerHTML = '<div class="bg-red-50 rounded-2xl border-2 border-red-200 p-5 text-red-700 text-lg">Error getting answer. Please try again.</div>'; }
+    };
+    xhr.onerror = function() {
+        loading.classList.add('hidden');
+        btn.disabled = false; btn.style.opacity = '1'; btn.textContent = 'Get Answer';
+        answerArea.innerHTML = '<div class="bg-red-50 rounded-2xl border-2 border-red-200 p-5 text-red-700 text-lg">Connection error. Please try again.</div>';
+    };
+    xhr.open('POST', '/qa/ask');
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.send('question=' + encodeURIComponent(question));
+}
+</script>
+{% endblock %}

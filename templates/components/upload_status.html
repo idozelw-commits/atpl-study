@@ -1,0 +1,23 @@
+<!-- Batch upload status — one progress row per file -->
+<div class="space-y-3">
+    {% for item in uploads %}
+    <div id="status-{{ item.id }}"
+         hx-get="/upload/status/{{ item.id }}"
+         hx-trigger="load, every 3s"
+         hx-target="#status-{{ item.id }}"
+         hx-swap="outerHTML">
+        <div class="bg-white rounded-xl border border-slate-200 p-4">
+            <div class="flex items-center gap-3">
+                <svg class="animate-spin h-4 w-4 text-blue-600 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-slate-800 truncate">{{ item.filename }}</p>
+                    <p class="text-xs text-slate-500">Starting...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>

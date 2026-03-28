@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>{% block title %}ATPL Study{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    elal: {
+                        900: '#001a33',
+                        800: '#002244',
+                        700: '#003366',
+                        600: '#004488',
+                        500: '#0055aa',
+                        400: '#3377bb',
+                        300: '#6699cc',
+                        200: '#99bbdd',
+                        100: '#ccddeeff',
+                        50:  '#e6eef5',
+                    },
+                    gold: {
+                        500: '#c8a84e',
+                        400: '#d4b96a',
+                        300: '#e0ca8b',
+                    }
+                }
+            }
+        }
+    }
+    </script>
+    <link rel="stylesheet" href="/static/style.css?v=3">
+</head>
+<body class="bg-elal-50 min-h-screen text-lg" style="padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)">
+    <!-- Nav -->
+    <nav class="bg-elal-700 px-4 py-4 sticky top-0 z-50 shadow-md">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+            <a href="/" class="flex items-center gap-3">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Book base -->
+                    <rect x="4" y="10" width="32" height="24" rx="3" fill="#e6eef5" stroke="white" stroke-width="1.5"/>
+                    <line x1="20" y1="10" x2="20" y2="34" stroke="white" stroke-width="1.5"/>
+                    <!-- Wing / plane silhouette -->
+                    <path d="M8 18 L20 12 L32 18 L28 19 L20 15 L12 19 Z" fill="#c8a84e"/>
+                    <!-- Tail -->
+                    <path d="M18 12 L20 6 L22 12" fill="#c8a84e"/>
+                </svg>
+                <span class="text-xl font-bold text-white tracking-wide">ATPL Study</span>
+            </a>
+            <div class="flex gap-2">
+                <a href="/" class="text-white/90 hover:text-white py-3 px-4 rounded-xl active:bg-elal-600 min-h-[48px] flex items-center text-base font-medium">Ask</a>
+                <a href="/upload" class="text-white/90 hover:text-white py-3 px-4 rounded-xl active:bg-elal-600 min-h-[48px] flex items-center text-base font-medium">Files</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <main class="max-w-3xl mx-auto px-4 py-6">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

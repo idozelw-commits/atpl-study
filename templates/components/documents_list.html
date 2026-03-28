@@ -1,0 +1,64 @@
+{% if documents %}
+    <div class="space-y-3">
+    {% for doc in documents %}
+    <div class="bg-white rounded-2xl border-2 border-elal-100 p-5 shadow-sm">
+        <!-- Header -->
+        <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+                <p class="font-bold text-elal-800 text-lg">{{ doc.filename }}</p>
+                <p class="text-base text-elal-400 mt-1">{{ doc.page_count }} pages
+                    {% if doc.labels %} &middot; <span class="text-elal-600 font-medium">{{ doc.labels }}</span>{% endif %}
+                </p>
+                {% if doc.notes %}
+                <p class="text-base text-elal-300 mt-1">{{ doc.notes }}</p>
+                {% endif %}
+            </div>
+            <span class="text-sm font-bold px-3 py-1.5 rounded-full shrink-0
+                {% if doc.processing_status == 'done' %}bg-green-100 text-green-700 border border-green-300
+                {% elif doc.processing_status == 'processing' %}bg-yellow-50 text-yellow-700 border border-yellow-300
+                {% elif doc.processing_status == 'error' %}bg-red-50 text-red-700 border border-red-300
+                {% else %}bg-elal-50 text-elal-500 border border-elal-200{% endif %}
+            ">
+                {% if doc.processing_status == 'processing' %}{{ (doc.processing_progress * 100) | int }}%
+                {% elif doc.processing_status == 'done' %}Ready
+                {% else %}{{ doc.processing_status }}{% endif %}
+            </span>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-4 mt-4 pt-4 border-t border-elal-50">
+            <button onclick="toggleEdit('{{ doc.id }}')"
+                class="text-base font-semibold text-elal-600 active:text-elal-800 min-h-[48px] px-1 flex items-center">
+                Edit info
+            </button>
+            <button onclick="deleteDoc('{{ doc.id }}', '{{ doc.filename }}')"
+                class="text-base font-semibold text-red-500 active:text-red-700 min-h-[48px] px-1 flex items-center">
+                Remove
+            </button>
+        </div>
+
+        <!-- Edit panel -->
+        <div id="edit-{{ doc.id }}" class="hidden mt-4 pt-4 border-t border-elal-50 space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-elal-500 mb-2">Labels</label>
+                <input type="text" id="labels-{{ doc.id }}" value="{{ doc.labels or '' }}"
+                    placeholder="e.g. QRH, Boeing 737, emergency"
+                    class="w-full rounded-xl border-2 border-elal-200 px-4 py-3 text-base text-elal-800 placeholder-elal-300">
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-elal-500 mb-2">Notes</label>
+                <textarea id="notes-{{ doc.id }}" rows="2"
+                    placeholder="What's in this file, when it's from..."
+                    class="w-full rounded-xl border-2 border-elal-200 px-4 py-3 text-base text-elal-800 placeholder-elal-300 resize-none">{{ doc.notes or '' }}</textarea>
+            </div>
+            <button onclick="saveMeta('{{ doc.id }}')"
+                class="bg-elal-700 text-white font-bold py-3 px-6 rounded-xl active:bg-elal-800 min-h-[52px] text-base">
+                Save
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+    </div>
+{% else %}
+    <p class="text-elal-400 text-lg">No documents uploaded yet.</p>
+{% endif %}
