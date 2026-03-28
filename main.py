@@ -1,8 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import Response, JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import traceback
 
@@ -11,20 +10,6 @@ load_dotenv()
 app = FastAPI(title="ATPL Study Assistant")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
-
-# Disable browser caching for HTML pages
-class NoCacheMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        response = await call_next(request)
-        ct = response.headers.get("content-type", "")
-        if "text/html" in ct:
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response.headers["Pragma"] = "no-cache"
-        return response
-
-app.add_middleware(NoCacheMiddleware)
-
 
 # Initialize database on startup
 try:
@@ -43,7 +28,10 @@ app.include_router(qa.router)
 
 @app.get("/")
 async def home(request: Request):
-    return templates.TemplateResponse("home.html", {"request": request})
+    try:
+        return templates.TemplateResponse("home.html", {"request": request})
+    except Exception as e:
+        return JSONResponse({"error": str(e), "tb": traceback.format_exc()}, status_code=500)
 
 
 @app.get("/health")
