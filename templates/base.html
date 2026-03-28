@@ -7,6 +7,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>{% block title %}ATPL Study{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    {% raw %}
     <script>
     tailwind.config = {
         theme: {
@@ -21,7 +22,7 @@
                         400: '#3377bb',
                         300: '#6699cc',
                         200: '#99bbdd',
-                        100: '#ccddeeff',
+                        100: '#ccddee',
                         50:  '#e6eef5',
                     },
                     gold: {
@@ -34,6 +35,7 @@
         }
     }
     </script>
+    {% endraw %}
     <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body class="bg-elal-50 min-h-screen text-lg" style="padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)">
