@@ -21,8 +21,7 @@ async def ask(request: Request, question: str = Form(...)):
     source_ids = [s.get("chunk_id", "") for s in result["sources"]]
     insert_qa(question, result["answer"], source_ids, result["confidence"])
 
-    return templates.TemplateResponse("components/answer.html", {
-        "request": request,
+    return templates.TemplateResponse(name="components/answer.html", request=request, context={
         "answer_html": answer_html,
         "confidence": result["confidence"],
         "sources": result["sources"],

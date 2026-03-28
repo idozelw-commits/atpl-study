@@ -19,10 +19,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.get("")
 async def upload_page(request: Request):
     documents = get_all_documents()
-    return templates.TemplateResponse("upload.html", {
-        "request": request,
-        "documents": documents,
-    })
+    return templates.TemplateResponse(name="upload.html", request=request, context={"documents": documents})
 
 
 @router.post("/pdf")
@@ -102,7 +99,4 @@ async def update_meta(doc_id: str, labels: str = Form(""), notes: str = Form("")
 @router.get("/documents")
 async def get_documents_list(request: Request):
     documents = get_all_documents()
-    return templates.TemplateResponse("components/documents_list.html", {
-        "request": request,
-        "documents": documents,
-    })
+    return templates.TemplateResponse(name="components/documents_list.html", request=request, context={"documents": documents})

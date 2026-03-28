@@ -9,10 +9,7 @@ load_dotenv()
 
 app = FastAPI(title="ATPL Study Assistant")
 app.mount("/static", StaticFiles(directory="static"), name="static")
-from jinja2 import Environment, FileSystemLoader
-_env = Environment(loader=FileSystemLoader("templates"), cache_size=0)
 templates = Jinja2Templates(directory="templates")
-templates.env = _env
 
 # Initialize database on startup
 try:
@@ -31,10 +28,7 @@ app.include_router(qa.router)
 
 @app.get("/")
 async def home(request: Request):
-    try:
-        return templates.TemplateResponse("home.html", {"request": request})
-    except Exception as e:
-        return JSONResponse({"error": str(e), "tb": traceback.format_exc()}, status_code=500)
+    return templates.TemplateResponse(name="home.html", request=request)
 
 
 @app.get("/health")
