@@ -124,6 +124,40 @@ function deleteDoc(docId, filename) {
     xhr.open('DELETE', '/upload/document/' + docId); xhr.send();
 }
 
+function retryDoc(docId, filename) {
+    // Create a hidden file input to re-select the file
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf';
+    input.onchange = function() {
+        if (!input.files.length) return;
+        var fd = new FormData();
+        fd.append('file', input.files[0]);
+        var statusDiv = document.getElementById('processing-status');
+        statusDiv.innerHTML = '<div class="bg-white rounded-2xl border-2 border-elal-100 p-5 shadow-sm"><div class="flex items-center justify-between mb-3"><p class="font-bold text-elal-800 text-lg">Re-processing ' + filename + '...</p><span class="text-base font-bold text-elal-600 proc-label">Starting...</span></div><div class="w-full bg-elal-100 rounded-full h-3"><div class="bg-elal-600 h-3 rounded-full transition-all duration-500 proc-bar" style="width: 5%"></div></div></div>';
+        var xhr = new XMLHttpRequest();
+        xhr.onload = function() {
+            if (xhr.status === 200) { pollProcessingInline(docId, statusDiv); }
+            else { statusDiv.innerHTML = '<div class="bg-red-50 rounded-2xl border-2 border-red-200 p-5 text-red-700">Retry failed.</div>'; }
+        };
+        xhr.open('POST', '/upload/document/' + docId + '/retry'); xhr.send(fd);
+    };
+    input.click();
+}
+
+function pollProcessingInline(docId, container) {
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function() {
+        if (xhr.status !== 200) { setTimeout(function(){pollProcessingInline(docId, container)}, 3000); return; }
+        var doc = JSON.parse(xhr.responseText);
+        var label = container.querySelector('.proc-label'), bar = container.querySelector('.proc-bar');
+        if (doc.status === 'done') { label.textContent = 'Ready!'; label.style.color = '#16a34a'; bar.style.width = '100%'; bar.style.backgroundColor = '#22c55e'; refreshDocs(); }
+        else if (doc.status === 'error') { label.textContent = 'Error'; label.style.color = '#dc2626'; refreshDocs(); }
+        else { var p = Math.round((doc.progress||0)*100); label.textContent = p+'%'; bar.style.width = Math.max(p,5)+'%'; setTimeout(function(){pollProcessingInline(docId, container)}, 3000); }
+    };
+    xhr.open('GET', '/upload/status/' + docId); xhr.send();
+}
+
 function toggleEdit(docId) {
     document.getElementById('edit-' + docId).classList.toggle('hidden');
 }

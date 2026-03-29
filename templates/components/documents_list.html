@@ -31,6 +31,12 @@
                 class="text-base font-semibold text-elal-600 active:text-elal-800 min-h-[48px] px-1 flex items-center">
                 Edit info
             </button>
+            {% if doc.processing_status in ['error', 'processing', 'pending'] and doc.processing_status != 'done' %}
+            <button onclick="retryDoc('{{ doc.id }}', '{{ doc.filename }}')"
+                class="text-base font-semibold text-yellow-600 active:text-yellow-800 min-h-[48px] px-1 flex items-center">
+                Re-upload & retry
+            </button>
+            {% endif %}
             <button onclick="deleteDoc('{{ doc.id }}', '{{ doc.filename }}')"
                 class="text-base font-semibold text-red-500 active:text-red-700 min-h-[48px] px-1 flex items-center">
                 Remove

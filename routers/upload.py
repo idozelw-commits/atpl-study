@@ -96,6 +96,28 @@ async def update_meta(doc_id: str, labels: str = Form(""), notes: str = Form("")
     return JSONResponse({"ok": True})
 
 
+@router.post("/document/{doc_id}/retry")
+async def retry_document(doc_id: str, file: UploadFile = File(...)):
+    """Re-upload and reprocess a stuck/failed document."""
+    from db.queries import update_document_status
+    doc = get_document(doc_id)
+    if not doc:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+
+    content = await file.read()
+
+    # Delete old chunks, reset status
+    from db.connection import get_supabase
+    sb = get_supabase()
+    sb.table("chunks").delete().eq("document_id", doc_id).execute()
+    update_document_status(doc_id, "pending", 0.0)
+
+    t = threading.Thread(target=run_processing_sync, args=(doc_id, content, doc.get("subject", ""), doc["filename"]), daemon=True)
+    t.start()
+
+    return JSONResponse({"ok": True, "id": doc_id})
+
+
 @router.get("/documents")
 async def get_documents_list(request: Request):
     documents = get_all_documents()

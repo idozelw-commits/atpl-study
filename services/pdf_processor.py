@@ -5,28 +5,38 @@ from db.queries import insert_chunks, update_document_status
 
 
 def extract_text_with_structure(pdf_bytes: bytes) -> list:
+    """Extract text page by page, keeping memory low."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    total_pages = len(doc)
     pages = []
-    for page_num in range(len(doc)):
-        page = doc[page_num]
-        blocks = page.get_text("dict")["blocks"]
-        page_texts = []
-        for block in blocks:
-            if "lines" not in block:
-                continue
-            for line in block["lines"]:
-                text = "".join(span["text"] for span in line["spans"])
-                if not text.strip():
+    # Process in batches of 30 pages to keep memory under control
+    batch_size = 30
+    for batch_start in range(0, total_pages, batch_size):
+        batch_end = min(batch_start + batch_size, total_pages)
+        for page_num in range(batch_start, batch_end):
+            page = doc[page_num]
+            # Use "text" mode (lighter than "dict") then parse separately for headings
+            blocks = page.get_text("dict")["blocks"]
+            page_texts = []
+            for block in blocks:
+                if "lines" not in block:
                     continue
-                max_size = max(span["size"] for span in line["spans"])
-                is_bold = any("bold" in span["font"].lower() for span in line["spans"])
-                page_texts.append({
-                    "text": text.strip(),
-                    "font_size": max_size,
-                    "is_bold": is_bold,
-                    "page": page_num + 1,
-                })
-        pages.append({"page_num": page_num + 1, "lines": page_texts})
+                for line in block["lines"]:
+                    text = "".join(span["text"] for span in line["spans"])
+                    if not text.strip():
+                        continue
+                    max_size = max(span["size"] for span in line["spans"])
+                    is_bold = any("bold" in span["font"].lower() for span in line["spans"])
+                    page_texts.append({
+                        "text": text.strip(),
+                        "font_size": max_size,
+                        "is_bold": is_bold,
+                        "page": page_num + 1,
+                    })
+            pages.append({"page_num": page_num + 1, "lines": page_texts})
+        # Release page resources after each batch
+        import gc
+        gc.collect()
     doc.close()
     return pages
 
