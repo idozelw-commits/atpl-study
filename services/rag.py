@@ -1,57 +1,16 @@
 import os
 import re
 
-from db.queries import search_chunks_by_embedding, search_chunks_by_text, get_neighbor_chunks
-
-
-async def expand_query(question: str) -> list:
-    """Generate multiple search queries from the user's question using Groq."""
-    if not os.environ.get("GROQ_API_KEY"):
-        return [question]
-
-    try:
-        from services.llm import generate
-        response_text = generate(
-            f"""You are an ATPL aviation expert. Given this question, generate 3 different search queries
-that would help find relevant information across ATPL study material.
-Include different angles, synonyms, and related aviation concepts.
-
-Question: {question}
-
-Reply with exactly 3 queries, one per line. No numbering, no explanations."""
-        )
-        queries = [q.strip() for q in response_text.strip().split("\n") if q.strip()]
-        return queries[:3]
-    except Exception:
-        return [question]
+from db.queries import search_chunks_fulltext, get_neighbor_chunks
 
 
 async def retrieve_chunks(question: str) -> list:
-    """Hybrid retrieval: vector similarity + keyword search."""
+    """Full-text search via Postgres."""
+    all_chunks = search_chunks_fulltext(question, top_k=20)
 
-    seen_ids = set()
-    all_chunks = []
-
-    # Vector search — single query, more results (faster than query expansion)
-    results = search_chunks_by_embedding(question, top_k=15)
-    for chunk in results:
-        if chunk["id"] not in seen_ids and chunk.get("similarity", 0) > 0.3:
-            seen_ids.add(chunk["id"])
-            all_chunks.append(chunk)
-
-    # Keyword search
-    keyword_results = search_chunks_by_text(question, top_k=10)
-    for chunk in keyword_results:
-        if chunk["id"] not in seen_ids:
-            seen_ids.add(chunk["id"])
-            all_chunks.append(chunk)
-
-    # Sort by similarity (best first), take top 20
-    all_chunks.sort(key=lambda c: c.get("similarity", 0), reverse=True)
-
-    # Fetch neighbor chunks for context continuity
+    # Fetch neighbor chunks for context
     enriched = []
-    for chunk in all_chunks[:20]:
+    for chunk in all_chunks[:15]:
         neighbors = get_neighbor_chunks(chunk["document_id"], chunk["chunk_index"])
         neighbor_text = "\n".join(n["content"] for n in neighbors if n["id"] != chunk["id"])
         chunk["context"] = neighbor_text[:1500]
@@ -61,7 +20,6 @@ async def retrieve_chunks(question: str) -> list:
 
 
 def build_context(chunks: list) -> str:
-    """Assemble retrieved chunks into structured context."""
     if not chunks:
         return "No relevant material found."
 
@@ -97,7 +55,7 @@ ANSWER GUIDELINES:
 - Use precise aviation terminology
 - Cite sources: mention which section/chapter and page numbers your answer draws from
 - For calculations or formulas, show the steps
-- Structure your answer with clear formatting (use bullet points, headers if needed)
+- Structure your answer with clear formatting
 
 CONFIDENCE RATING — at the very end, on its own line, write exactly one of:
 CONFIDENCE: high
@@ -106,21 +64,19 @@ CONFIDENCE: low
 
 Use these criteria:
 - HIGH: The study material directly addresses this question. You found clear, specific information.
-- MEDIUM: The material contains relevant information that answers the question, even if you had to combine multiple sections or interpret slightly. This is the right rating for most well-supported answers.
-- LOW: The material does not meaningfully address this topic. Only use LOW when the material genuinely lacks relevant content — not just because the answer requires synthesis.
+- MEDIUM: The material contains relevant information that answers the question, even if you had to combine multiple sections or interpret slightly.
+- LOW: The material does not meaningfully address this topic. Only use LOW when the material genuinely lacks relevant content.
 
 Default to MEDIUM when in doubt. Reserve LOW for genuine gaps in the material."""
 
 
 async def answer_question(question: str) -> dict:
-    """Full RAG pipeline: retrieve -> synthesize -> return with sources."""
-
     chunks = await retrieve_chunks(question)
     context = build_context(chunks)
 
     if not os.environ.get("GROQ_API_KEY"):
         return {
-            "answer": "**Groq API key not configured.**\n\nPlease set `GROQ_API_KEY` in your `.env` file.\n\nGet a free key at: [console.groq.com](https://console.groq.com)",
+            "answer": "**Groq API key not configured.**",
             "confidence": "low",
             "sources": [],
         }
@@ -141,7 +97,6 @@ Study Material:
             "sources": [],
         }
 
-    # Extract confidence
     confidence = "medium"
     lower = answer_text.lower()
     if "confidence: high" in lower:
@@ -151,7 +106,6 @@ Study Material:
 
     answer_clean = re.sub(r'\n*CONFIDENCE:\s*(high|medium|low)\s*$', '', answer_text, flags=re.IGNORECASE).strip()
 
-    # Build source references
     sources = []
     seen_refs = set()
     for chunk in chunks[:20]:
