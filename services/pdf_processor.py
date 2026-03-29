@@ -1,23 +1,58 @@
+import gc
+import tempfile
+import os
 from collections import Counter
 import fitz  # PyMuPDF
 
 from db.queries import insert_chunks, update_document_status
 
 
-def extract_text_with_structure(pdf_bytes: bytes) -> list:
-    """Extract text page by page, keeping memory low."""
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+def process_pdf_sync(doc_id: str, pdf_bytes: bytes, subject: str, filename: str):
+    """Memory-safe PDF processing: write to temp file, process page-by-page."""
+
+    # Write PDF to temp file instead of keeping bytes in memory
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(pdf_bytes)
+        tmp_path = tmp.name
+
+    # Release the bytes from memory immediately
+    del pdf_bytes
+    gc.collect()
+
+    try:
+        _process_from_file(doc_id, tmp_path, subject, filename)
+    finally:
+        os.unlink(tmp_path)
+
+
+def _process_from_file(doc_id: str, pdf_path: str, subject: str, filename: str):
+    """Process PDF from file path, page by page, minimal memory."""
+
+    doc = fitz.open(pdf_path)
     total_pages = len(doc)
-    pages = []
-    # Process in batches of 30 pages to keep memory under control
-    batch_size = 30
+    doc.close()
+
+    update_document_status(doc_id, "processing", 0.1)
+
+    # Step 1: Sample pages for font detection (only need ~50 pages)
+    body_size = _detect_body_font_size(pdf_path, total_pages)
+    update_document_status(doc_id, "processing", 0.15)
+
+    # Step 2: Extract text and chunk, processing 20 pages at a time
+    all_chunks = []
+    current_chunk = {"text": "", "chapter": "", "section": "", "page_start": 1, "page_end": 1}
+    prev_tail = ""
+    batch_size = 20
+
     for batch_start in range(0, total_pages, batch_size):
         batch_end = min(batch_start + batch_size, total_pages)
+
+        doc = fitz.open(pdf_path)
         for page_num in range(batch_start, batch_end):
             page = doc[page_num]
-            # Use "text" mode (lighter than "dict") then parse separately for headings
-            blocks = page.get_text("dict")["blocks"]
-            page_texts = []
+            # Use lightweight text extraction with position info
+            blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
+
             for block in blocks:
                 if "lines" not in block:
                     continue
@@ -27,99 +62,85 @@ def extract_text_with_structure(pdf_bytes: bytes) -> list:
                         continue
                     max_size = max(span["size"] for span in line["spans"])
                     is_bold = any("bold" in span["font"].lower() for span in line["spans"])
-                    page_texts.append({
-                        "text": text.strip(),
-                        "font_size": max_size,
-                        "is_bold": is_bold,
-                        "page": page_num + 1,
-                    })
-            pages.append({"page_num": page_num + 1, "lines": page_texts})
-        # Release page resources after each batch
-        import gc
+
+                    is_heading = False
+                    heading_level = 3
+                    size = round(max_size, 1)
+                    if size > body_size + 1.5 or (size > body_size + 0.5 and is_bold):
+                        is_heading = True
+                        heading_level = 1 if size > body_size + 3 else 2
+                    elif is_bold and len(text.strip()) < 100:
+                        is_heading = True
+                        heading_level = 3
+
+                    # Chunking inline
+                    if is_heading and heading_level <= 2:
+                        # Flush current chunk
+                        chunk_text = current_chunk["text"].strip()
+                        if chunk_text and len(chunk_text) > 100:
+                            content = (prev_tail + " " + chunk_text).strip() if prev_tail else chunk_text
+                            all_chunks.append({
+                                "content": content,
+                                "chapter": current_chunk["chapter"],
+                                "section": current_chunk["section"],
+                                "page_start": current_chunk["page_start"],
+                                "page_end": current_chunk["page_end"],
+                            })
+                            prev_tail = chunk_text[-200:] if len(chunk_text) > 200 else chunk_text
+
+                        if heading_level <= 1:
+                            current_chunk = {"text": text.strip() + "\n", "chapter": text.strip(), "section": "", "page_start": page_num + 1, "page_end": page_num + 1}
+                        else:
+                            current_chunk = {"text": text.strip() + "\n", "chapter": current_chunk.get("chapter", ""), "section": text.strip(), "page_start": page_num + 1, "page_end": page_num + 1}
+                    else:
+                        if is_heading:
+                            current_chunk["text"] += "\n" + text.strip() + "\n"
+                        else:
+                            current_chunk["text"] += text.strip() + "\n"
+                        current_chunk["page_end"] = page_num + 1
+
+                        if len(current_chunk["text"]) > 8000:
+                            chunk_text = current_chunk["text"].strip()
+                            if chunk_text and len(chunk_text) > 100:
+                                content = (prev_tail + " " + chunk_text).strip() if prev_tail else chunk_text
+                                all_chunks.append({
+                                    "content": content,
+                                    "chapter": current_chunk["chapter"],
+                                    "section": current_chunk["section"],
+                                    "page_start": current_chunk["page_start"],
+                                    "page_end": current_chunk["page_end"],
+                                })
+                                prev_tail = chunk_text[-200:] if len(chunk_text) > 200 else chunk_text
+                            current_chunk = {"text": "", "chapter": current_chunk["chapter"], "section": current_chunk["section"], "page_start": page_num + 1, "page_end": page_num + 1}
+
+        doc.close()
         gc.collect()
-    doc.close()
-    return pages
 
+        progress = 0.15 + 0.35 * min(batch_end, total_pages) / total_pages
+        update_document_status(doc_id, "processing", progress)
+        print(f"  [{filename}] Extracted {batch_end}/{total_pages} pages, {len(all_chunks)} chunks so far")
 
-def detect_headings(pages: list) -> list:
-    all_sizes = [line["font_size"] for page in pages for line in page["lines"]]
-    if not all_sizes:
-        return pages
-    size_counts = Counter(round(s, 1) for s in all_sizes)
-    body_size = size_counts.most_common(1)[0][0]
-    for page in pages:
-        for line in page["lines"]:
-            size = round(line["font_size"], 1)
-            if size > body_size + 1.5 or (size > body_size + 0.5 and line["is_bold"]):
-                line["is_heading"] = True
-                line["heading_level"] = 1 if size > body_size + 3 else 2
-            elif line["is_bold"] and len(line["text"]) < 100:
-                line["is_heading"] = True
-                line["heading_level"] = 3
-            else:
-                line["is_heading"] = False
-    return pages
+    # Flush last chunk
+    chunk_text = current_chunk["text"].strip()
+    if chunk_text and len(chunk_text) > 100:
+        content = (prev_tail + " " + chunk_text).strip() if prev_tail else chunk_text
+        all_chunks.append({
+            "content": content,
+            "chapter": current_chunk["chapter"],
+            "section": current_chunk["section"],
+            "page_start": current_chunk["page_start"],
+            "page_end": current_chunk["page_end"],
+        })
 
-
-def semantic_chunk(pages: list, max_chars: int = 8000, overlap_chars: int = 200) -> list:
-    chunks = []
-    current_chunk = {"text": "", "chapter": "", "section": "", "page_start": 1, "page_end": 1}
-    prev_tail = ""
-
-    def flush_chunk():
-        nonlocal prev_tail
-        text = current_chunk["text"].strip()
-        if text and len(text) > 100:
-            content = (prev_tail + " " + text).strip() if prev_tail else text
-            chunks.append({
-                "content": content,
-                "chapter": current_chunk["chapter"],
-                "section": current_chunk["section"],
-                "page_start": current_chunk["page_start"],
-                "page_end": current_chunk["page_end"],
-            })
-            prev_tail = text[-overlap_chars:] if len(text) > overlap_chars else text
-
-    for page in pages:
-        for line in page["lines"]:
-            if line.get("is_heading") and line.get("heading_level", 3) <= 2:
-                flush_chunk()
-                if line.get("heading_level", 3) <= 1:
-                    current_chunk = {"text": line["text"] + "\n", "chapter": line["text"], "section": "", "page_start": line["page"], "page_end": line["page"]}
-                else:
-                    current_chunk = {"text": line["text"] + "\n", "chapter": current_chunk.get("chapter", ""), "section": line["text"], "page_start": line["page"], "page_end": line["page"]}
-            else:
-                if line.get("is_heading"):
-                    current_chunk["text"] += "\n" + line["text"] + "\n"
-                else:
-                    current_chunk["text"] += line["text"] + "\n"
-                current_chunk["page_end"] = line["page"]
-                if len(current_chunk["text"]) > max_chars:
-                    flush_chunk()
-                    current_chunk = {"text": "", "chapter": current_chunk["chapter"], "section": current_chunk["section"], "page_start": line["page"], "page_end": line["page"]}
-
-    flush_chunk()
-    return chunks
-
-
-def process_pdf_sync(doc_id: str, pdf_bytes: bytes, subject: str, filename: str):
-    """Extract, chunk, store in Supabase. No embeddings needed — Postgres handles search."""
-    pages = extract_text_with_structure(pdf_bytes)
-    update_document_status(doc_id, "processing", 0.2)
-
-    pages = detect_headings(pages)
-    update_document_status(doc_id, "processing", 0.3)
-
-    chunks = semantic_chunk(pages)
     update_document_status(doc_id, "processing", 0.5)
 
-    if not chunks:
+    if not all_chunks:
         update_document_status(doc_id, "error")
         return
 
-    # Prepare records — Postgres trigger auto-generates search_vector
+    # Step 3: Insert into Supabase
     chunk_records = []
-    for idx, chunk in enumerate(chunks):
+    for idx, chunk in enumerate(all_chunks):
         chunk_records.append({
             "document_id": doc_id,
             "chunk_index": idx,
@@ -132,7 +153,6 @@ def process_pdf_sync(doc_id: str, pdf_bytes: bytes, subject: str, filename: str)
             "token_count": len(chunk["content"]) // 4,
         })
 
-    # Insert in batches
     total = len(chunk_records)
     batch_size = 50
     for i in range(0, total, batch_size):
@@ -140,4 +160,36 @@ def process_pdf_sync(doc_id: str, pdf_bytes: bytes, subject: str, filename: str)
         insert_chunks(batch)
         progress = 0.5 + 0.5 * min(i + batch_size, total) / total
         update_document_status(doc_id, "processing", progress)
-        print(f"  [{filename}] {min(i + batch_size, total)}/{total} chunks")
+
+    print(f"  [{filename}] Done: {total} chunks from {total_pages} pages")
+
+
+def _detect_body_font_size(pdf_path: str, total_pages: int) -> float:
+    """Sample pages to detect the most common (body) font size."""
+    doc = fitz.open(pdf_path)
+    all_sizes = []
+
+    # Sample up to 30 pages evenly distributed
+    sample_pages = min(30, total_pages)
+    step = max(1, total_pages // sample_pages)
+
+    for i in range(0, total_pages, step):
+        if len(all_sizes) > 2000:
+            break
+        page = doc[i]
+        blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
+        for block in blocks:
+            if "lines" not in block:
+                continue
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    if span["text"].strip():
+                        all_sizes.append(round(span["size"], 1))
+
+    doc.close()
+
+    if not all_sizes:
+        return 10.0
+
+    size_counts = Counter(all_sizes)
+    return size_counts.most_common(1)[0][0]
