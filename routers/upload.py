@@ -127,35 +127,40 @@ async def get_documents_list(request: Request):
 @router.post("/embed-all")
 async def embed_all_chunks():
     """Generate embeddings for all chunks."""
-    from db.queries import get_all_chunk_ids_and_content, update_chunks_embeddings_batch, count_total_chunks
-    from services.embeddings import get_embeddings_batch
+    import traceback
+    try:
+        from db.queries import get_all_chunk_ids_and_content, update_chunks_embeddings_batch, count_total_chunks
+        from services.embeddings import get_embeddings_batch
 
-    total = count_total_chunks()
-    if total == 0:
-        return JSONResponse({"status": "done", "message": "No chunks found."})
+        total = count_total_chunks()
+        if total == 0:
+            return JSONResponse({"status": "done", "message": "No chunks found."})
 
-    processed = 0
-    batch_size = 50
-    offset = 0
+        processed = 0
+        batch_size = 50
+        offset = 0
 
-    while offset < total:
-        chunks = get_all_chunk_ids_and_content(offset=offset, limit=batch_size)
-        if not chunks:
-            break
+        while offset < total:
+            chunks = get_all_chunk_ids_and_content(offset=offset, limit=batch_size)
+            if not chunks:
+                break
 
-        texts = [c["content"][:8000] for c in chunks]
-        embeddings = get_embeddings_batch(texts)
-        updates = [
-            {"id": chunks[i]["id"], "embedding": embeddings[i]}
-            for i in range(len(chunks))
-        ]
-        update_chunks_embeddings_batch(updates)
-        processed += len(chunks)
-        offset += batch_size
-        print(f"  [embed-all] {processed}/{total} chunks embedded")
+            texts = [c["content"][:8000] for c in chunks]
+            embeddings = get_embeddings_batch(texts)
+            updates = [
+                {"id": chunks[i]["id"], "embedding": embeddings[i]}
+                for i in range(len(chunks))
+            ]
+            update_chunks_embeddings_batch(updates)
+            processed += len(chunks)
+            offset += batch_size
+            print(f"  [embed-all] {processed}/{total} chunks embedded")
 
-    return JSONResponse({
-        "status": "done",
-        "total_chunks": total,
-        "embedded": processed,
-    })
+        return JSONResponse({
+            "status": "done",
+            "total_chunks": total,
+            "embedded": processed,
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse({"error": str(e), "type": type(e).__name__}, status_code=500)
