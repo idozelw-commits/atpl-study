@@ -126,21 +126,20 @@ async def get_documents_list(request: Request):
 
 @router.post("/embed-all")
 async def embed_all_chunks():
-    """Generate embeddings for all chunks that don't have them yet."""
-    from db.queries import get_chunks_without_embeddings, update_chunks_embeddings_batch, count_chunks_without_embeddings, count_total_chunks
+    """Generate embeddings for all chunks."""
+    from db.queries import get_all_chunk_ids_and_content, update_chunks_embeddings_batch, count_total_chunks
     from services.embeddings import get_embeddings_batch
 
     total = count_total_chunks()
-    remaining = count_chunks_without_embeddings()
+    if total == 0:
+        return JSONResponse({"status": "done", "message": "No chunks found."})
 
-    if remaining == 0:
-        return JSONResponse({"status": "done", "message": f"All {total} chunks already have embeddings."})
-
-    # Process in batches
     processed = 0
     batch_size = 50
-    while True:
-        chunks = get_chunks_without_embeddings(limit=batch_size)
+    offset = 0
+
+    while offset < total:
+        chunks = get_all_chunk_ids_and_content(offset=offset, limit=batch_size)
         if not chunks:
             break
 
@@ -152,10 +151,11 @@ async def embed_all_chunks():
         ]
         update_chunks_embeddings_batch(updates)
         processed += len(chunks)
-        print(f"  [embed-all] {processed}/{remaining} chunks embedded")
+        offset += batch_size
+        print(f"  [embed-all] {processed}/{total} chunks embedded")
 
     return JSONResponse({
         "status": "done",
         "total_chunks": total,
-        "newly_embedded": processed,
+        "embedded": processed,
     })

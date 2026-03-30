@@ -97,21 +97,13 @@ def get_neighbor_chunks(document_id: str, chunk_index: int) -> list:
     return result.data
 
 
-def get_chunks_without_embeddings(limit: int = 100) -> list:
-    """Get chunks that don't have embeddings yet."""
+def get_all_chunk_ids_and_content(offset: int = 0, limit: int = 100) -> list:
+    """Get chunk IDs and content for embedding generation."""
     sb = get_supabase()
     result = sb.table("chunks").select(
-        "id, content, subject, chapter, section"
-    ).is_("embedding", "null").limit(limit).execute()
+        "id, content"
+    ).order("created_at").range(offset, offset + limit - 1).execute()
     return result.data
-
-
-def update_chunk_embedding(chunk_id: str, embedding: list):
-    """Update a single chunk's embedding."""
-    sb = get_supabase()
-    sb.table("chunks").update({
-        "embedding": embedding,
-    }).eq("id", chunk_id).execute()
 
 
 def update_chunks_embeddings_batch(updates: list):
@@ -121,15 +113,6 @@ def update_chunks_embeddings_batch(updates: list):
         sb.table("chunks").update({
             "embedding": item["embedding"],
         }).eq("id", item["id"]).execute()
-
-
-def count_chunks_without_embeddings() -> int:
-    """Count chunks missing embeddings."""
-    sb = get_supabase()
-    result = sb.table("chunks").select(
-        "id", count="exact"
-    ).is_("embedding", "null").execute()
-    return result.count or 0
 
 
 def count_total_chunks() -> int:
