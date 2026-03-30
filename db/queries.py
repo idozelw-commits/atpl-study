@@ -102,7 +102,7 @@ def get_all_chunk_ids_and_content(offset: int = 0, limit: int = 100) -> list:
     sb = get_supabase()
     result = sb.table("chunks").select(
         "id, content"
-    ).order("created_at").range(offset, offset + limit - 1).execute()
+    ).order("chunk_index").range(offset, offset + limit - 1).execute()
     return result.data
 
 
