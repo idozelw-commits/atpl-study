@@ -124,19 +124,22 @@ async def get_documents_list(request: Request):
     return templates.TemplateResponse(name="components/documents_list.html", request=request, context={"documents": documents})
 
 
-@router.post("/embed-all")
-async def embed_all_chunks():
-    """Generate embeddings for all chunks."""
+_embed_status = {"running": False, "processed": 0, "total": 0, "error": None}
+
+
+def _run_embed_all():
+    """Background embedding job."""
     import traceback
+    global _embed_status
     try:
         from db.queries import get_all_chunk_ids_and_content, update_chunks_embeddings_batch, count_total_chunks
         from services.embeddings import get_embeddings_batch
 
         total = count_total_chunks()
-        if total == 0:
-            return JSONResponse({"status": "done", "message": "No chunks found."})
+        _embed_status["total"] = total
+        _embed_status["processed"] = 0
+        _embed_status["error"] = None
 
-        processed = 0
         batch_size = 50
         offset = 0
 
@@ -152,15 +155,41 @@ async def embed_all_chunks():
                 for i in range(len(chunks))
             ]
             update_chunks_embeddings_batch(updates)
-            processed += len(chunks)
+            _embed_status["processed"] += len(chunks)
             offset += batch_size
-            print(f"  [embed-all] {processed}/{total} chunks embedded")
+            print(f"  [embed-all] {_embed_status['processed']}/{total} chunks embedded")
 
-        return JSONResponse({
-            "status": "done",
-            "total_chunks": total,
-            "embedded": processed,
-        })
     except Exception as e:
         traceback.print_exc()
-        return JSONResponse({"error": str(e), "type": type(e).__name__}, status_code=500)
+        _embed_status["error"] = str(e)
+    finally:
+        _embed_status["running"] = False
+
+
+@router.post("/embed-all")
+async def embed_all_chunks():
+    """Start background embedding job for all chunks."""
+    global _embed_status
+    if _embed_status["running"]:
+        return JSONResponse({
+            "status": "running",
+            "processed": _embed_status["processed"],
+            "total": _embed_status["total"],
+        })
+
+    _embed_status["running"] = True
+    t = threading.Thread(target=_run_embed_all, daemon=True)
+    t.start()
+
+    return JSONResponse({"status": "started", "message": "Embedding job started in background. Check /upload/embed-status for progress."})
+
+
+@router.get("/embed-status")
+async def embed_status():
+    """Check progress of background embedding job."""
+    return JSONResponse({
+        "running": _embed_status["running"],
+        "processed": _embed_status["processed"],
+        "total": _embed_status["total"],
+        "error": _embed_status["error"],
+    })
