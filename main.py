@@ -33,4 +33,10 @@ async def home(request: Request):
 
 @app.get("/health")
 async def health():
-    return JSONResponse({"status": "ok"})
+    import os
+    return JSONResponse({
+        "status": "ok",
+        "openai_key_set": bool(os.environ.get("OPENAI_API_KEY")),
+        "groq_key_set": bool(os.environ.get("GROQ_API_KEY")),
+        "supabase_url_set": bool(os.environ.get("SUPABASE_URL")),
+    })

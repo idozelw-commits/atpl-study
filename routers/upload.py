@@ -130,17 +130,19 @@ _embed_status = {"running": False, "processed": 0, "total": 0, "error": None}
 def _run_embed_all():
     """Background embedding job."""
     import traceback
+    import time
     global _embed_status
     try:
-        from db.queries import get_all_chunk_ids_and_content, update_chunks_embeddings_batch, count_total_chunks
+        from db.queries import get_all_chunk_ids_and_content, count_total_chunks
         from services.embeddings import get_embeddings_batch
+        from db.connection import get_supabase
 
         total = count_total_chunks()
         _embed_status["total"] = total
         _embed_status["processed"] = 0
         _embed_status["error"] = None
 
-        batch_size = 50
+        batch_size = 20  # Smaller batches for stability
         offset = 0
 
         while offset < total:
@@ -148,20 +150,37 @@ def _run_embed_all():
             if not chunks:
                 break
 
+            # Step 1: Get embeddings from OpenAI
             texts = [c["content"][:8000] for c in chunks]
             embeddings = get_embeddings_batch(texts)
-            updates = [
-                {"id": chunks[i]["id"], "embedding": embeddings[i]}
-                for i in range(len(chunks))
-            ]
-            update_chunks_embeddings_batch(updates)
+
+            # Step 2: Write embeddings one at a time via RPC
+            sb = get_supabase()
+            for i, chunk in enumerate(chunks):
+                try:
+                    sb.rpc("update_chunk_embedding", {
+                        "chunk_id": chunk["id"],
+                        "new_embedding": embeddings[i],
+                    }).execute()
+                except Exception as e:
+                    print(f"  [embed-all] Failed to update chunk {chunk['id']}: {e}")
+                    # Retry once after short delay
+                    time.sleep(1)
+                    try:
+                        sb.rpc("update_chunk_embedding", {
+                            "chunk_id": chunk["id"],
+                            "new_embedding": embeddings[i],
+                        }).execute()
+                    except Exception as e2:
+                        print(f"  [embed-all] Retry also failed: {e2}")
+
             _embed_status["processed"] += len(chunks)
             offset += batch_size
             print(f"  [embed-all] {_embed_status['processed']}/{total} chunks embedded")
 
     except Exception as e:
         traceback.print_exc()
-        _embed_status["error"] = str(e)
+        _embed_status["error"] = f"{type(e).__name__}: {str(e)}"
     finally:
         _embed_status["running"] = False
 
