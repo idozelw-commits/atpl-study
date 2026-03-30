@@ -6,6 +6,12 @@ services:
     envVars:
       - key: GROQ_API_KEY
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
     disk:
       name: atpl-data
       mountPath: /app/data

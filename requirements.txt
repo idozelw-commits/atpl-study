@@ -6,4 +6,5 @@ pymupdf
 python-dotenv
 markdown
 groq
+openai
 supabase

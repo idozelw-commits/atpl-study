@@ -90,10 +90,10 @@ BEGIN
 END;
 $$;
 
--- RPC: Full-text keyword search
+-- RPC: Full-text keyword search (OR-based for better recall with natural language)
 CREATE OR REPLACE FUNCTION search_chunks_text(
     search_query TEXT,
-    match_count INT DEFAULT 5
+    match_count INT DEFAULT 10
 )
 RETURNS TABLE (
     id UUID,
@@ -111,7 +111,15 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    or_query tsquery;
 BEGIN
+    -- Build OR query: split words and join with |
+    or_query := array_to_string(
+        regexp_split_to_array(trim(search_query), '\s+'),
+        ' | '
+    )::tsquery;
+
     RETURN QUERY
     SELECT
         c.id,
@@ -125,9 +133,9 @@ BEGIN
         c.page_start,
         c.page_end,
         c.token_count,
-        ts_rank(to_tsvector('english', c.content), plainto_tsquery('english', search_query)) AS rank
+        ts_rank(to_tsvector('english', c.content), or_query) AS rank
     FROM chunks c
-    WHERE to_tsvector('english', c.content) @@ plainto_tsquery('english', search_query)
+    WHERE to_tsvector('english', c.content) @@ or_query
     ORDER BY rank DESC
     LIMIT match_count;
 END;

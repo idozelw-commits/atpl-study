@@ -4,7 +4,7 @@ import os
 from collections import Counter
 import fitz  # PyMuPDF
 
-from db.queries import insert_chunks, update_document_status
+from db.queries import insert_chunks, update_document_status, update_chunks_embeddings_batch
 
 
 def process_pdf_sync(doc_id: str, pdf_bytes: bytes, subject: str, filename: str):
@@ -99,7 +99,7 @@ def _process_from_file(doc_id: str, pdf_path: str, subject: str, filename: str):
                             current_chunk["text"] += text.strip() + "\n"
                         current_chunk["page_end"] = page_num + 1
 
-                        if len(current_chunk["text"]) > 8000:
+                        if len(current_chunk["text"]) > 2500:
                             chunk_text = current_chunk["text"].strip()
                             if chunk_text and len(chunk_text) > 100:
                                 content = (prev_tail + " " + chunk_text).strip() if prev_tail else chunk_text
@@ -116,7 +116,7 @@ def _process_from_file(doc_id: str, pdf_path: str, subject: str, filename: str):
         doc.close()
         gc.collect()
 
-        progress = 0.15 + 0.35 * min(batch_end, total_pages) / total_pages
+        progress = 0.15 + 0.25 * min(batch_end, total_pages) / total_pages
         update_document_status(doc_id, "processing", progress)
         print(f"  [{filename}] Extracted {batch_end}/{total_pages} pages, {len(all_chunks)} chunks so far")
 
@@ -132,7 +132,7 @@ def _process_from_file(doc_id: str, pdf_path: str, subject: str, filename: str):
             "page_end": current_chunk["page_end"],
         })
 
-    update_document_status(doc_id, "processing", 0.5)
+    update_document_status(doc_id, "processing", 0.4)
 
     if not all_chunks:
         update_document_status(doc_id, "error")
@@ -158,8 +158,40 @@ def _process_from_file(doc_id: str, pdf_path: str, subject: str, filename: str):
     for i in range(0, total, batch_size):
         batch = chunk_records[i:i + batch_size]
         insert_chunks(batch)
-        progress = 0.5 + 0.5 * min(i + batch_size, total) / total
+        progress = 0.4 + 0.45 * min(i + batch_size, total) / total
         update_document_status(doc_id, "processing", progress)
+
+    print(f"  [{filename}] Inserted {total} chunks from {total_pages} pages")
+
+    # Step 4: Generate embeddings
+    try:
+        from services.embeddings import get_embeddings_batch
+        from db.connection import get_supabase
+        sb = get_supabase()
+
+        # Fetch the chunks we just inserted (they have IDs now)
+        result = sb.table("chunks").select("id, content").eq(
+            "document_id", doc_id
+        ).order("chunk_index").execute()
+        db_chunks = result.data
+
+        texts = [c["content"][:8000] for c in db_chunks]
+        embed_batch_size = 50
+        for i in range(0, len(texts), embed_batch_size):
+            batch_texts = texts[i:i + embed_batch_size]
+            batch_chunks = db_chunks[i:i + embed_batch_size]
+            embeddings = get_embeddings_batch(batch_texts)
+            updates = [
+                {"id": batch_chunks[j]["id"], "embedding": embeddings[j]}
+                for j in range(len(batch_chunks))
+            ]
+            update_chunks_embeddings_batch(updates)
+            progress = 0.85 + 0.15 * min(i + embed_batch_size, len(texts)) / len(texts)
+            update_document_status(doc_id, "processing", progress)
+
+        print(f"  [{filename}] Embeddings generated for {len(db_chunks)} chunks")
+    except Exception as e:
+        print(f"  [{filename}] Embedding generation failed (search will use full-text only): {e}")
 
     print(f"  [{filename}] Done: {total} chunks from {total_pages} pages")
 
