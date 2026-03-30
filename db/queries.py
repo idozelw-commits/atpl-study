@@ -107,12 +107,13 @@ def get_all_chunk_ids_and_content(offset: int = 0, limit: int = 100) -> list:
 
 
 def update_chunks_embeddings_batch(updates: list):
-    """Update embeddings for multiple chunks. Each item: {id, embedding}."""
+    """Update embeddings for multiple chunks via RPC (PostgREST can't write vector columns directly)."""
     sb = get_supabase()
     for item in updates:
-        sb.table("chunks").update({
-            "embedding": item["embedding"],
-        }).eq("id", item["id"]).execute()
+        sb.rpc("update_chunk_embedding", {
+            "chunk_id": item["id"],
+            "new_embedding": item["embedding"],
+        }).execute()
 
 
 def count_total_chunks() -> int:

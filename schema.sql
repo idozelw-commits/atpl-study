@@ -141,5 +141,18 @@ BEGIN
 END;
 $$;
 
+-- RPC: Update chunk embedding (PostgREST can't directly write vector columns)
+CREATE OR REPLACE FUNCTION update_chunk_embedding(
+    chunk_id UUID,
+    new_embedding vector(1536)
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE chunks SET embedding = new_embedding WHERE id = chunk_id;
+END;
+$$;
+
 -- Storage bucket (run this separately or create via Supabase dashboard)
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('pdfs', 'pdfs', false);
