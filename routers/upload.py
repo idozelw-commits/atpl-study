@@ -128,55 +128,67 @@ _embed_status = {"running": False, "processed": 0, "total": 0, "error": None}
 
 
 def _run_embed_all():
-    """Background embedding job."""
+    """Background embedding job. Only processes chunks without embeddings (has_embedding=false)."""
     import traceback
     import time
     global _embed_status
     try:
-        from db.queries import get_all_chunk_ids_and_content, count_total_chunks
         from services.embeddings import get_embeddings_batch
         from db.connection import get_supabase
 
-        total = count_total_chunks()
-        _embed_status["total"] = total
-        _embed_status["processed"] = 0
+        sb = get_supabase()
+
+        # Count remaining
+        remaining = sb.table("chunks").select("id", count="exact").eq("has_embedding", False).execute()
+        total_remaining = remaining.count or 0
+        total_all = sb.table("chunks").select("id", count="exact").execute().count or 0
+
+        _embed_status["total"] = total_all
+        _embed_status["processed"] = total_all - total_remaining
         _embed_status["error"] = None
 
-        batch_size = 20  # Smaller batches for stability
-        offset = 0
+        if total_remaining == 0:
+            print(f"  [embed-all] All {total_all} chunks already embedded")
+            return
 
-        while offset < total:
-            chunks = get_all_chunk_ids_and_content(offset=offset, limit=batch_size)
+        print(f"  [embed-all] {total_remaining} chunks remaining to embed (of {total_all} total)")
+
+        batch_size = 20
+        while True:
+            # Fetch chunks that need embedding
+            chunks = sb.table("chunks").select("id, content").eq(
+                "has_embedding", False
+            ).limit(batch_size).execute().data
+
             if not chunks:
                 break
 
-            # Step 1: Get embeddings from OpenAI
+            # Get embeddings from OpenAI
             texts = [c["content"][:8000] for c in chunks]
             embeddings = get_embeddings_batch(texts)
 
-            # Step 2: Write embeddings one at a time via RPC
-            sb = get_supabase()
+            # Write embeddings + set flag
             for i, chunk in enumerate(chunks):
                 try:
                     sb.rpc("update_chunk_embedding", {
                         "chunk_id": chunk["id"],
                         "new_embedding": embeddings[i],
                     }).execute()
+                    sb.table("chunks").update({"has_embedding": True}).eq("id", chunk["id"]).execute()
                 except Exception as e:
-                    print(f"  [embed-all] Failed to update chunk {chunk['id']}: {e}")
-                    # Retry once after short delay
+                    print(f"  [embed-all] Failed chunk {chunk['id']}: {e}")
                     time.sleep(1)
                     try:
                         sb.rpc("update_chunk_embedding", {
                             "chunk_id": chunk["id"],
                             "new_embedding": embeddings[i],
                         }).execute()
+                        sb.table("chunks").update({"has_embedding": True}).eq("id", chunk["id"]).execute()
                     except Exception as e2:
-                        print(f"  [embed-all] Retry also failed: {e2}")
+                        print(f"  [embed-all] Retry failed: {e2}")
 
             _embed_status["processed"] += len(chunks)
-            offset += batch_size
-            print(f"  [embed-all] {_embed_status['processed']}/{total} chunks embedded")
+            print(f"  [embed-all] {_embed_status['processed']}/{total_all} chunks embedded")
 
     except Exception as e:
         traceback.print_exc()
